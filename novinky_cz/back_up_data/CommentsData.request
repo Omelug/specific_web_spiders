@@ -1,0 +1,20 @@
+POST /graphql HTTP/2
+Host: diskuze.seznam.cz
+Cookie: cmpreferrer=https://diskuze.seznam.cz/; ftxt_pref=OIC9XV9MTnkBRvl7Ln9m_Juj; lps=eyJfZnJlc2giOmZhbHNlLCJfcGVybWFuZW50Ijp0cnVlfQ.ZlFuTg.xwclAnYgi354gy_z_e746hD456Q
+Content-Length: 893
+Sec-Ch-Ua: "Not-A.Brand";v="99", "Chromium";v="124"
+Accept: application/json
+Content-Type: application/json
+Accept-Language: cs
+Sec-Ch-Ua-Mobile: ?0
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.6367.118 Safari/537.36
+Sec-Ch-Ua-Platform: "Linux"
+Origin: https://diskuze.seznam.cz
+Sec-Fetch-Site: same-origin
+Sec-Fetch-Mode: cors
+Sec-Fetch-Dest: empty
+Referer: https://diskuze.seznam.cz/
+Accept-Encoding: gzip, deflate, br
+Priority: u=1, i
+
+{"query":"query CommentsData($commentIds: [ID]!, $includeUnpublishedOfUserId_in: [ID]) {\n  comments(\n    id_in: $commentIds\n    first: 500\n    status_nin: [DELETED]\n    includeUnpublishedOfUserId_in: $includeUnpublishedOfUserId_in\n  ) {\n    edges {\n      node {\n        ...CommentFragment\n        __typename\n      }\n      __typename\n    }\n    __typename\n  }\n}\n\nfragment CommentFragment on CommentNode {\n  id\n  content\n  type\n  createdDate\n  editedDate\n  parentCommentId\n  referencedCommentId\n  user {\n    ...UserFragment\n    __typename\n  }\n  __typename\n}\n\nfragment UserFragment on UserNode {\n  id\n  profilImage\n  profilLink\n  __typename\n}","variables":{"commentIds":["Q29tbWVudE5vZGU6NDY0MzA2NjIz","Q29tbWVudE5vZGU6NDY0MTQwNDA1","Q29tbWVudE5vZGU6NDY0MzEzODM1","Q29tbWVudE5vZGU6NDY0MzExMTEx","Q29tbWVudE5vZGU6NDY0MTMwOTYx","Q29tbWVudE5vZGU6NDY0MjUzODUz"]}}

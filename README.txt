@@ -1,0 +1,1 @@
+wget -O "https://www.google.com/search?q=inurl%3A%22www.novinky.cz%2Fdiskuze%2F%22" -o google_search.txt
