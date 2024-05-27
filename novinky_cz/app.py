@@ -3,6 +3,7 @@ from flask_graphql import GraphQLView
 import graphene
 from schema import schema
 import sqlite3
+import line_profiler
 
 DATABASE = 'test.db'
 app = Flask(__name__)
@@ -12,7 +13,7 @@ app.add_url_rule(
     view_func=GraphQLView.as_view(
         'graphql',
         schema=schema,
-        graphiql=True  # Enable the GraphiQL interface
+        graphiql=True
     )
 )
 
@@ -45,13 +46,11 @@ def search_input(comment_id):
         cursor.execute("SELECT comment_id, parentCommentId FROM COMMENTS WHERE comment_id = ?", (parent_comment_id,))
         root_comment = cursor.fetchone()
     comments_html = ""
-    #comments_html = add_comment_div(comments_html, cursor, root_comment[0])
     comments_html = get_childrens(comments_html=comments_html, cursor=cursor, comment_id=root_comment[0], level=0)
     conn.close()
     return comments_html
 
-
-def add_comment_div(comments_html,cursor, comment_id, level):
+def add_comment_div(comments_html, cursor, comment_id, level):
 
     cursor.execute("SELECT * FROM COMMENTS WHERE comment_id = ?", (comment_id,))
     comment = cursor.fetchone()
@@ -82,7 +81,6 @@ def add_comment_div(comments_html,cursor, comment_id, level):
         </div>
     </div>
     """
-    #print(comments_html)
     comments_html += f"{comment_div}"
     return comments_html
 
@@ -107,7 +105,6 @@ def fetch_user(user_id):
         "profileImage": user[0],
         "profileLink": user[1]
     }
-
 
 if __name__ == '__main__':
     app.run(debug=True)

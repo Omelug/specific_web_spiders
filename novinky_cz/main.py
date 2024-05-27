@@ -7,9 +7,10 @@ from print_color import print
 import xml.etree.ElementTree as ET
 import re
 import sys
+import aiofiles as aiof
 
 DONE_LINKS_FILE = 'done_links.txt'
-
+SITEMAP="sitemap_articles_0.xml"
 GRAPHQL_URL = 'https://diskuze.seznam.cz/graphql'
 DB_TEST = 'test.db'
 
@@ -17,7 +18,7 @@ COMMENTS_DATA_QUERY = """
     query CommentsData($commentIds: [ID]!, $includeUnpublishedOfUserId_in: [ID]) {
           comments(
             id_in: $commentIds
-            first: 500
+            first: 5000
             status_nin: [DELETED]
             includeUnpublishedOfUserId_in: $includeUnpublishedOfUserId_in
           ) {
@@ -158,7 +159,7 @@ def getListOfCommentsIdsHtml(article_url, comm_ids):
     if response.status_code == 200:
         soup = BeautifulSoup(response.text, 'html.parser')
         discussionId = extract_discussion_id(soup)
-        if discussionId != None:
+        if discussionId:
             getDiscussionComments(discussionId=discussionId, comm_ids=comm_ids)
         else:
             print(f"{article_url} is None", tag='warning', tag_color='yellow')
@@ -233,15 +234,16 @@ def getDoneLinks():
         return set()
 
 
-def addToDoneLinks(article_id):
-    with open(DONE_LINKS_FILE, 'a') as file:
-        file.write(f"{article_id}\n")
+async def addToDoneLinks(article_id):
+    async with aiof.open(DONE_LINKS_FILE, 'a') as file:
+        await file.write(f"{article_id}\n")
+        await file.flush()
 
 
 if __name__ == "__main__":
 
     db = db_init(DB_TEST)
-    tree = ET.parse("sitemap_articles_0.xml")
+    tree = ET.parse(SITEMAP)
     root = tree.getroot()
     namespace = {'ns': 'http://www.sitemaps.org/schemas/sitemap/0.9'}
     loc_elements = root.findall(".//ns:loc", namespaces=namespace)
