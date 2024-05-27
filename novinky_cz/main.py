@@ -1,3 +1,4 @@
+import inspect
 import sqlite3
 import requests
 from bs4 import BeautifulSoup
@@ -8,6 +9,10 @@ import re
 import sys
 
 DONE_LINKS_FILE = 'done_links.txt'
+
+GRAPHQL_URL = 'https://diskuze.seznam.cz/graphql'
+DB_TEST = 'test.db'
+
 COMMENTS_DATA_QUERY = """
     query CommentsData($commentIds: [ID]!, $includeUnpublishedOfUserId_in: [ID]) {
           comments(
@@ -19,37 +24,30 @@ COMMENTS_DATA_QUERY = """
             edges {
               node {
                 ...CommentFragment
-                __typename
               }
-              __typename
             }
-            __typename
           }
         }
 
         fragment CommentFragment on CommentNode {
           id
           content
-          type
           createdDate
           editedDate
           parentCommentId
           referencedCommentId
           user {
             ...UserFragment
-            __typename
           }
-          __typename
         }
 
         fragment UserFragment on UserNode {
           id
           profilImage
           profilLink
-          __typename
         }
     """
-REPLIES_QUERY ="""
+REPLIES_QUERY = """
 query CommentReplies($commentId: ID!, $after: String, $first: Int, $idNin: [ID], $secondarySort: [CommentNodeSortEnum]) {
     comments(parentCommentId: $commentId
     after: $after
@@ -73,13 +71,38 @@ query CommentReplies($commentId: ID!, $after: String, $first: Int, $idNin: [ID],
     }
 }
 """
+DISCUSSION_QUERY = """
+query DiscussionComments($id: ID!, $after: String, $first: Int, $offset: Int, $sort: [CommentNodeSortEnum] = [CREATED_DATE_DESC], $repliesLimit: Int = 1, $commentsUserId: ID, $includeUnpublishedOfUserId_in: [ID]) {
+  comments(
+    discussionId: $id
+    after: $after
+    first: $first
+    offset: $offset
+    sort: $sort
+    userId: $commentsUserId
+    status_nin: [DELETED]
+    includeUnpublishedOfUserId_in: $includeUnpublishedOfUserId_in
+  ) {
+    edges {
+      node {
+        id   
+        meta: childComments(first: $repliesLimit, status_nin: [DELETED]) {
+          totalCount
+        }
+      }
+    }
+    totalCount
+  }
+}
+"""
+
+
 def db_init(db_name):
     conn = sqlite3.connect(db_name)
     conn.execute('''CREATE TABLE IF NOT EXISTS COMMENTS
              (comment_id    TEXT    PRIMARY KEY,
              article_id    LONG,
              content    TEXT,
-             type   TEXT,
              createdDate  TEXT,
              editedDate   TEXT,
              parentCommentId        TEXT,
@@ -91,44 +114,64 @@ def db_init(db_name):
                 profilImage    TEXT,
                 profilLink     TEXT
                 );''')
-
     return conn
 
-def getListOfCommentsIdsHtml(article_url):
+
+def graphql_req(payload):
+    response = requests.post(GRAPHQL_URL, json=payload)
+    if response.status_code != 200:
+        print(f"{inspect.stack()[1].function} error {response.status_code}", tag='failure', tag_color='red')
+        exit(response.status_code)
+    return json.loads(response.text)
+
+
+def extract_discussion_id(soup):
+    script_tag = soup.find('script', id='ima-revival-cache')
+    if script_tag:
+        discussion_id = re.search(r'"discussion":\{\"id":\"(.*?)\",', script_tag.string)
+        if discussion_id is None:
+            return None
+        return discussion_id.group(1)
+    print("ma-revival-cache not found", tag_color='red')
+    exit(15)
+
+
+def getDiscussionComments(discussionId, comm_ids):
+    chunk_size = 50
+    offset = 0
+    comm_count = 0
+    while offset == 0 or offset < comm_count:
+        variables = {"id": f"{discussionId}", "first": chunk_size, "repliesLimit": 0, "offset": offset}
+        payload = {"query": DISCUSSION_QUERY, "variables": variables}
+
+        data = graphql_req(payload)
+        for edge in data['data']['comments']['edges']:
+            comm_ids.add(edge['node']['id'])
+            if edge['node']['meta']['totalCount'] != 0:
+                addCommentReplies(edge['node']['id'], comm_ids, recursive=True)
+        comm_count = data['data']['comments']['totalCount']
+        offset += chunk_size
+
+
+def getListOfCommentsIdsHtml(article_url, comm_ids):
     response = requests.get(article_url)
     if response.status_code == 200:
         soup = BeautifulSoup(response.text, 'html.parser')
-        articles = soup.find_all('div', class_='g_dl')
-        html_comment_ids = []
-        for div in articles:
-            data_dot_data = div.get('data-dot-data')
-            if data_dot_data:
-                #print(f"{json.loads(data_dot_data).get("commentId")}")
-                html_comment_ids.append(json.loads(data_dot_data).get("commentId"))
-            else:
-                print("Found div without data-dot-data attribute", tag_color='red', color='magenta')
-                print(div, tag_color='red')
-                exit(404)
-        return html_comment_ids
+        discussionId = extract_discussion_id(soup)
+        if discussionId != None:
+            getDiscussionComments(discussionId=discussionId, comm_ids=comm_ids)
+        else:
+            print(f"{article_url} is None", tag='warning', tag_color='yellow')
     else:
         print(f"Response error {response.status_code}", tag='failure', tag_color='red')
         exit(response.status_code)
 
-def saveCommentsData(article_id, database, graph_url,comm_ids):
-    # call the data
-    variables = {
-        "commentIds": comm_ids
-    }
-    payload = {
-        "query": COMMENTS_DATA_QUERY,
-        "variables": variables
-    }
-    response = requests.post(graph_url, json=payload)
-    if response.status_code != 200:
-        print(f"saveCommentsData error {response.status_code}", tag='failure', tag_color='red')
-        exit(response.status_code)
-    #zpracovani stahnutych
-    data = json.loads(response.text)
+
+def saveCommentsData(article_id, database, comm_ids):
+    variables = {"commentIds": comm_ids}
+    payload = {"query": COMMENTS_DATA_QUERY, "variables": variables}
+    data = graphql_req(payload)
+
     comments = data['data']['comments']['edges']
     for comment_edge in comments:
         comment = comment_edge['node']
@@ -156,47 +199,36 @@ def saveCommentsData(article_id, database, graph_url,comm_ids):
                    profilLink=excluded.profilLink
            ''', (user['id'], user['profilImage'], user['profilLink']))
         database.commit()
-def addCommentReplies(parent_id,graph_url,html_comm_ids, recursive=True):
-    variables = {
-        "commentId": parent_id,
-        "first": 80
-    }
-    payload = {
-        "query": REPLIES_QUERY,
-        "variables": variables
-    }
-    response = requests.post(graph_url, json=payload)
-    if response.status_code != 200:
-        print(f"addCommentReplies error {response.status_code}", tag='failure', tag_color='red')
-        exit(response.status_code)
 
-    # zpracovani stahnutych
-    data = json.loads(response.text)
+
+def addCommentReplies(parent_id, html_comm_ids, recursive=True):
+    variables = {"commentId": parent_id, "first": 80}
+    payload = {"query": REPLIES_QUERY, "variables": variables}
+
+    data = graphql_req(payload)
     for edge in data['data']['comments']['edges']:
         html_comm_ids.add(edge['node']['id'])
         if edge['node']['replies']['totalCount'] != 0:
-            addCommentReplies(edge['node']['id'], graph_url, html_comm_ids, recursive)
+            addCommentReplies(edge['node']['id'], html_comm_ids, recursive)
+
 
 def split_into_chunks(lst, chunk_size):
     for i in range(0, len(lst), chunk_size):
         yield lst[i:i + chunk_size]
 
-def add_to_db(article_id, database, graph_url, article_url):
-    html_comm_ids = getListOfCommentsIdsHtml(article_url)
-    all_ids = set(html_comm_ids)
-    for comment_id in html_comm_ids:
-        addCommentReplies(comment_id,graph_url, all_ids, recursive=True)
 
-    chunks = list(split_into_chunks(list(all_ids), 10))
+def add_to_db(article_id, database, article_url):
+    comm_ids = set()
+    getListOfCommentsIdsHtml(article_url, comm_ids)
+    chunks = list(split_into_chunks(list(comm_ids), 42))
     for chunk in chunks:
-        saveCommentsData(article_id, database, graph_url, chunk)
+        saveCommentsData(article_id, database, chunk)
 
 
 def getDoneLinks():
     try:
         with open(DONE_LINKS_FILE, 'r') as file:
-            done_links = file.read().splitlines()
-            return set(done_links)
+            return set(file.read().splitlines())
     except FileNotFoundError:
         return set()
 
@@ -205,13 +237,10 @@ def addToDoneLinks(article_id):
     with open(DONE_LINKS_FILE, 'a') as file:
         file.write(f"{article_id}\n")
 
-if __name__ == "__main__":
-    # get links from list
-    GRAPHQL_URL = 'https://diskuze.seznam.cz/graphql'
-    ARTICLE_URL = 'https://diskuze.seznam.cz/v3/novinky/discussion/www.novinky.cz%2Fclanek%2F40472815?sentinel=lwhg1npz-4f1fce38-52c3-456d-a8a1-c837529333d0'
-    DB_TEST = 'test.db'
-    db = db_init(DB_TEST)
 
+if __name__ == "__main__":
+
+    db = db_init(DB_TEST)
     tree = ET.parse("sitemap_articles_0.xml")
     root = tree.getroot()
     namespace = {'ns': 'http://www.sitemaps.org/schemas/sitemap/0.9'}
@@ -220,16 +249,14 @@ if __name__ == "__main__":
     done_links = getDoneLinks()
     i = 0
     for loc in loc_elements:
-        if i > 5:
-            break
         match = re.search(r'(\d+)(?=\D*$)', loc.text)
         if not match:
             print(f"No number found in the URL {loc.text}", file=sys.stderr)
             exit(1)
         if match.group(1) not in done_links:
             url = f"https://diskuze.seznam.cz/v3/novinky/discussion/www.novinky.cz%2Fclanek%2F{match.group(1)}?sentinel=ahoj"
-            print(f"Get data from  {url}")
-            add_to_db( article_id= match.group(1),database=db, graph_url= GRAPHQL_URL, article_url = url)
+            print(f"{i}:{url}")
+            add_to_db(article_id=match.group(1), database=db, article_url=url)
             addToDoneLinks(match.group(1))
             i += 1
     db.close()

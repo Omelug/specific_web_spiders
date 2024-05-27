@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>SearchById</title>
+     <style>
+         div{
+             font-size: 12px;
+         }
+        .comment {
+            margin: 3px 0;
+            padding: 0;
+            border: 1px solid #ccc;
+        }
+        .children {
+            margin-left: 20px;
+        }
+        .row {
+            display: flex;
+            align-items: left;
+        }
+        .column {
+            margin: 3pt;
+            float: left;
+        }
+        img{
+            max-width: 35pt;
+        }
+    </style>
+</head>
+<body>
+    <h1>Search by Id</h1>
+    <form action="/search" method="post">
+        <input type="text" name="search_term" placeholder="Enter commentId">
+        <button type="submit">Search</button>
+    </form>
+    <div id="results">
+        {% if results %}
+            {{ results|safe }}
+        {% endif %}
+    </div>
+</body>
+</html>
