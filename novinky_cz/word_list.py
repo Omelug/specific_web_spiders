@@ -1,6 +1,6 @@
 import sqlite3
 
-conn = sqlite3.connect('test.db')
+conn = sqlite3.connect('results.db')
 cursor = conn.cursor()
 
 with open('words.txt', 'r') as file:

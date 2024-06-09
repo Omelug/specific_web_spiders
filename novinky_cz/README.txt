@@ -1,8 +1,4 @@
 
-
-
-
-
 novinky_cz
 ├── README.txt
 ├── app.py #vezme sitemap_articles_0.xml a rekurzivne stahne komentare
@@ -16,7 +12,7 @@ novinky_cz
 ├── templates
 │           ├── index.html
 │           └── results.html
-├── test.db #VYSTUP app.py, vysledna databaze s tabulkami COMMENTS a USERS
+├── results.db #VYSTUP app.py, vysledna databaze s tabulkami COMMENTS a USERS
 ├── word_list.py #vygeneruje query a vypise na strout vysledek
 ├── words.json #VYSTUP word_list.py
 └── words.txt #VSTUP word_list.py, slova ktera maji byt hledana

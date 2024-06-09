@@ -5,7 +5,7 @@ from schema import schema
 import sqlite3
 import line_profiler
 
-DATABASE = 'test.db'
+DATABASE = 'results.db'
 app = Flask(__name__)
 
 app.add_url_rule(
@@ -88,10 +88,8 @@ def get_childrens(comments_html, cursor, comment_id, level):
     comments_html = add_comment_div(comments_html, cursor, comment_id, level)
     cursor.execute("SELECT comment_id FROM COMMENTS WHERE parentCommentId = ? ORDER BY createdDate", (comment_id,))
     children = cursor.fetchall()
-    #print(f"{comment_id}:{len(children)} child size")
     for child in children:
         comments_html = get_childrens(comments_html, cursor, child[0], level+1)
-    #print(len(comments_html))
     return comments_html
 
 def fetch_user(user_id):
@@ -107,4 +105,4 @@ def fetch_user(user_id):
     }
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=True, host='0.0.0.0')

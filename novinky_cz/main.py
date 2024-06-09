@@ -2,25 +2,25 @@ import inspect
 import sqlite3
 import requests
 from bs4 import BeautifulSoup
+import asyncio
 import json
 from print_color import print
 import xml.etree.ElementTree as ET
 import re
 import sys
 import aiofiles as aiof
+from novinky_db import *
 
 DONE_LINKS_FILE = 'done_links.txt'
-SITEMAP="sitemap_articles_0.xml"
+SITEMAP = "sitemap.xml"
 GRAPHQL_URL = 'https://diskuze.seznam.cz/graphql'
-DB_TEST = 'test.db'
 
 COMMENTS_DATA_QUERY = """
-    query CommentsData($commentIds: [ID]!, $includeUnpublishedOfUserId_in: [ID]) {
+    query CommentsData($commentIds: [ID]!) {
           comments(
             id_in: $commentIds
             first: 5000
             status_nin: [DELETED]
-            includeUnpublishedOfUserId_in: $includeUnpublishedOfUserId_in
           ) {
             edges {
               node {
@@ -73,7 +73,7 @@ query CommentReplies($commentId: ID!, $after: String, $first: Int, $idNin: [ID],
 }
 """
 DISCUSSION_QUERY = """
-query DiscussionComments($id: ID!, $after: String, $first: Int, $offset: Int, $sort: [CommentNodeSortEnum] = [CREATED_DATE_DESC], $repliesLimit: Int = 1, $commentsUserId: ID, $includeUnpublishedOfUserId_in: [ID]) {
+query DiscussionComments($id: ID!, $after: String, $first: Int, $offset: Int, $sort: [CommentNodeSortEnum] = [CREATED_DATE_DESC], $repliesLimit: Int = 1, $commentsUserId: ID) {
   comments(
     discussionId: $id
     after: $after
@@ -82,7 +82,6 @@ query DiscussionComments($id: ID!, $after: String, $first: Int, $offset: Int, $s
     sort: $sort
     userId: $commentsUserId
     status_nin: [DELETED]
-    includeUnpublishedOfUserId_in: $includeUnpublishedOfUserId_in
   ) {
     edges {
       node {
@@ -98,28 +97,10 @@ query DiscussionComments($id: ID!, $after: String, $first: Int, $offset: Int, $s
 """
 
 
-def db_init(db_name):
-    conn = sqlite3.connect(db_name)
-    conn.execute('''CREATE TABLE IF NOT EXISTS COMMENTS
-             (comment_id    TEXT    PRIMARY KEY,
-             article_id    LONG,
-             content    TEXT,
-             createdDate  TEXT,
-             editedDate   TEXT,
-             parentCommentId        TEXT,
-             referencedCommentId    TEXT,
-             user_id    TEXT
-             );''')
-    conn.execute('''CREATE TABLE IF NOT EXISTS USERS
-                (user_id           TEXT   PRIMARY KEY,
-                profilImage    TEXT,
-                profilLink     TEXT
-                );''')
-    return conn
-
-
 def graphql_req(payload):
     response = requests.post(GRAPHQL_URL, json=payload)
+    #print(payload)
+    #print(response.text)
     if response.status_code != 200:
         print(f"{inspect.stack()[1].function} error {response.status_code}", tag='failure', tag_color='red')
         exit(response.status_code)
@@ -240,25 +221,38 @@ async def addToDoneLinks(article_id):
         await file.flush()
 
 
+def get_id_from_url(url):
+    match = re.search(r'(\d+)(?=\D*$)', url)
+    if not match:
+        print(f"No number found in the URL {url}", file=sys.stderr)
+        exit(1)
+    return match.group(1)
+
+def update_sitemap():
+    url = "https://www.novinky.cz/sitemaps/sitemap_articles_1.xml"
+    response = requests.get(url)
+    if response.status_code == 200:
+        with open("sitemap.xml", "wb") as file:
+            file.write(response.content)
+        print("Sitemap saved successfully.")
+    else:
+        print(f"Failed to download sitemap. Status code: {response.status_code}")
+
+
 if __name__ == "__main__":
 
     db = db_init(DB_TEST)
-    tree = ET.parse(SITEMAP)
+    update_sitemap()
+    tree = ET.parse("sitemap.xml")
     root = tree.getroot()
     namespace = {'ns': 'http://www.sitemaps.org/schemas/sitemap/0.9'}
-    loc_elements = root.findall(".//ns:loc", namespaces=namespace)
-
     done_links = getDoneLinks()
-    i = 0
-    for loc in loc_elements:
-        match = re.search(r'(\d+)(?=\D*$)', loc.text)
-        if not match:
-            print(f"No number found in the URL {loc.text}", file=sys.stderr)
-            exit(1)
-        if match.group(1) not in done_links:
-            url = f"https://diskuze.seznam.cz/v3/novinky/discussion/www.novinky.cz%2Fclanek%2F{match.group(1)}?sentinel=ahoj"
+
+    for i, loc in enumerate(root.findall(".//ns:loc", namespaces=namespace)):
+        article_id = get_id_from_url(loc.text)
+        if article_id not in done_links:
+            url = f"https://diskuze.seznam.cz/v3/novinky/discussion/www.novinky.cz%2Fclanek%2F{article_id}?sentinel=ahoj"
             print(f"{i}:{url}")
-            add_to_db(article_id=match.group(1), database=db, article_url=url)
-            addToDoneLinks(match.group(1))
-            i += 1
+            add_to_db(article_id=article_id, database=db, article_url=url)
+            asyncio.run(addToDoneLinks(article_id))
     db.close()
